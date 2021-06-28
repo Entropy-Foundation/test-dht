@@ -1694,7 +1694,6 @@ dependencies = [
  "env_logger",
  "futures",
  "libp2p 0.38.0",
- "libp2p-kad 0.30.0",
  "sc-network",
 ]
 
