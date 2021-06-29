@@ -61,13 +61,18 @@ use libp2p::{
     development_transport,
     identity,
     // Multiaddr,
-    mdns::{Mdns, MdnsConfig, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
     Multiaddr
 };
 use std::str::FromStr;
 // use std::str::FromStr;
 use std::{error::Error, task::{Context, Poll}};
+use jsonrpc_http_server::*;
+use jsonrpc_http_server::jsonrpc_core::{
+    IoHandler,
+    Value,
+    types::params::Params
+};
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -176,6 +181,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Kick it off.
     let mut listening = false;
+
+    start_rpc_server(&mut swarm.behaviour_mut().kademlia);
+    
     task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
         loop {
             match stdin.try_poll_next_unpin(cx)? {
@@ -201,6 +209,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Poll::Pending
     }))
+}
+
+fn start_rpc_server(kademlia: &mut Kademlia<MemoryStore>)
+{
+    let mut io = IoHandler::default();
+	io.add_method("say_hello", |params:Params| async {
+        if let Params::Map(m) = params {
+            let param_key = m.get("m").unwrap();
+            let key_string = param_key.as_str().unwrap();
+
+            let key = Key::new(&key_string);
+            // here i am getting the error as this will mutate the kademlia which is not acceptable by the closure
+            // Also want to wait for result and push it into repsonse.
+            // kademlia.get_record(&key, Quorum::One);
+        }
+		Ok(Value::String("hello".into()))
+	});
+
+	let server = ServerBuilder::new(io)
+		.cors(DomainsValidation::AllowOnly(vec![AccessControlAllowOrigin::Null]))
+		.start_http(&"127.0.0.1:3030".parse().unwrap())
+		.expect("Unable to start RPC server");
+
+	server.wait();
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
