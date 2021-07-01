@@ -74,6 +74,64 @@ use jsonrpc_http_server::jsonrpc_core::{
     types::params::Params
 };
 
+#[derive(NetworkBehaviour)]
+struct MyBehaviour {
+    kademlia: Kademlia<MemoryStore>,
+    // mdns: Mdns
+}
+
+impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
+    // Called when `kademlia` produces an event.
+    fn inject_event(&mut self, message: KademliaEvent) {
+        match message {
+            KademliaEvent::QueryResult { result, .. } => match result {
+                QueryResult::GetProviders(Ok(ok)) => {
+                    for peer in ok.providers {
+                        println!(
+                            "Peer {:?} provides key {:?}",
+                            peer,
+                            std::str::from_utf8(ok.key.as_ref()).unwrap()
+                        );
+                    }
+                }
+                QueryResult::GetProviders(Err(err)) => {
+                    eprintln!("Failed to get providers: {:?}", err);
+                }
+                QueryResult::GetRecord(Ok(ok)) => {
+                    for PeerRecord { record: Record { key, value, .. }, ..} in ok.records {
+                        println!(
+                            "Got record {:?} {:?}",
+                            std::str::from_utf8(key.as_ref()).unwrap(),
+                            std::str::from_utf8(&value).unwrap(),
+                        );
+                    }
+                }
+                QueryResult::GetRecord(Err(err)) => {
+                    eprintln!("Failed to get record: {:?}", err);
+                }
+                QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
+                    println!(
+                        "Successfully put record {:?}",
+                        std::str::from_utf8(key.as_ref()).unwrap()
+                    );
+                }
+                QueryResult::PutRecord(Err(err)) => {
+                    eprintln!("Failed to put record: {:?}", err);
+                }
+                QueryResult::StartProviding(Ok(AddProviderOk { key })) => {
+                    println!("Successfully put provider record {:?}",
+                        std::str::from_utf8(key.as_ref()).unwrap()
+                    );
+                }
+                QueryResult::StartProviding(Err(err)) => {
+                    eprintln!("Failed to put provider record: {:?}", err);
+                }
+                _ => {}
+            }
+            _ => {}
+        }
+    }
+}
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -86,120 +144,67 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     let transport = development_transport(local_key).await?;
-
+    dbg!("transport: {?}", &transport);
     // We create a custom network behaviour that combines Kademlia and mDNS.
-    #[derive(NetworkBehaviour)]
-    struct MyBehaviour {
-        kademlia: Kademlia<MemoryStore>,
-        // mdns: Mdns
-    }
-
-    // impl NetworkBehaviourEventProcess<MdnsEvent> for MyBehaviour {
-    //     // Called when `mdns` produces an event.
-    //     fn inject_event(&mut self, event: MdnsEvent) {
-    //         if let MdnsEvent::Discovered(list) = event {
-    //             for (peer_id, multiaddr) in list {
-    //                 println!("{},{}",&peer_id, &multiaddr);
-    //                 self.kademlia.add_address(&peer_id, multiaddr);
-    //             }
-    //         }
-    //     }
-    // }
-
-    impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
-        // Called when `kademlia` produces an event.
-        fn inject_event(&mut self, message: KademliaEvent) {
-            match message {
-                KademliaEvent::QueryResult { result, .. } => match result {
-                    QueryResult::GetProviders(Ok(ok)) => {
-                        for peer in ok.providers {
-                            println!(
-                                "Peer {:?} provides key {:?}",
-                                peer,
-                                std::str::from_utf8(ok.key.as_ref()).unwrap()
-                            );
-                        }
-                    }
-                    QueryResult::GetProviders(Err(err)) => {
-                        eprintln!("Failed to get providers: {:?}", err);
-                    }
-                    QueryResult::GetRecord(Ok(ok)) => {
-                        for PeerRecord { record: Record { key, value, .. }, ..} in ok.records {
-                            println!(
-                                "Got record {:?} {:?}",
-                                std::str::from_utf8(key.as_ref()).unwrap(),
-                                std::str::from_utf8(&value).unwrap(),
-                            );
-                        }
-                    }
-                    QueryResult::GetRecord(Err(err)) => {
-                        eprintln!("Failed to get record: {:?}", err);
-                    }
-                    QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
-                        println!(
-                            "Successfully put record {:?}",
-                            std::str::from_utf8(key.as_ref()).unwrap()
-                        );
-                    }
-                    QueryResult::PutRecord(Err(err)) => {
-                        eprintln!("Failed to put record: {:?}", err);
-                    }
-                    QueryResult::StartProviding(Ok(AddProviderOk { key })) => {
-                        println!("Successfully put provider record {:?}",
-                            std::str::from_utf8(key.as_ref()).unwrap()
-                        );
-                    }
-                    QueryResult::StartProviding(Err(err)) => {
-                        eprintln!("Failed to put provider record: {:?}", err);
-                    }
-                    _ => {}
-                }
-                _ => {}
-            }
-        }
-    }
-
+    
     // Create a swarm to manage peers and events.
     let mut swarm = {
         // Create a Kademlia behaviour.
         let store = MemoryStore::new(local_peer_id.clone());
         let kademlia = Kademlia::new(local_peer_id.clone(), store);
+        println!("inside swarm, got kademlia");
         // let bootaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?;
         // kademlia.add_address(&local_peer_id, bootaddr);
         // let bootaddr = Multiaddr::from_str("/ip4/0.0.0.0/tcp/0")?;
         // kademlia.add_address(&local_peer_id, bootaddr.clone());
         // let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
         let behaviour = MyBehaviour { kademlia};
+        println!("inside swarm, got behaviour");
         Swarm::new(transport, behaviour, local_peer_id)
     };
 
+    
+    
+    // Listen on all interfaces and whatever port the OS assigns.
+    &swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    println!("swarm listening on /ip4/0.0.0.0/tcp/0");
+    
+
+    let f1 = start_swarm(&mut swarm);
+
+    println!("rpc server starting");
+    let f2 = start_rpc_server();
+
+    futures::join!(f1, f2);
+    
+    Ok(())    
+}
+
+async fn start_swarm(swarm: &mut libp2p::Swarm<MyBehaviour>){
     // Read full lines from stdin
     let mut stdin = io::BufReader::new(io::stdin()).lines();
-
-    // Listen on all interfaces and whatever port the OS assigns.
-    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-
     // Kick it off.
     let mut listening = false;
-
-    start_rpc_server(&mut swarm.behaviour_mut().kademlia);
-    
-    task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
+    future::poll_fn(|cx: &mut Context<'_>| {
+        println!("swarm poll");
         loop {
-            match stdin.try_poll_next_unpin(cx)? {
-                Poll::Ready(Some(line)) => handle_input_line(&mut swarm.behaviour_mut().kademlia, line),
+            println!("swarm poll loop 1");
+            match stdin.try_poll_next_unpin(cx) {
+                Poll::Ready(Some(line)) => handle_input_line(&mut swarm.behaviour_mut().kademlia, line.unwrap()),
                 Poll::Ready(None) => panic!("Stdin closed"),
                 Poll::Pending => break
             }
         }
         loop {
+            println!("swarm poll loop 2");
             match swarm.poll_next_unpin(cx) {
                 Poll::Ready(Some(event)) => println!("{:?}", event),
-                Poll::Ready(None) => return Poll::Ready(Ok(())),
+                Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Pending => {
                     if !listening {
                         if let Some(a) = Swarm::listeners(&swarm).next() {
                             println!("Listening on {:?}", a);
+                            println!("pending swarm...");
                             listening = true;
                         }
                     }
@@ -208,36 +213,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Poll::Pending
-    }))
+    }).await;
 }
 
-fn start_rpc_server(kademlia: &mut Kademlia<MemoryStore>)
+async fn start_rpc_server()
 {
+    println!("-1");
     let mut io = IoHandler::default();
+    println!("0");
 	io.add_method("say_hello", |params:Params| async {
+        println!("someone is saying hello!!!");
         if let Params::Map(m) = params {
             let param_key = m.get("m").unwrap();
             let key_string = param_key.as_str().unwrap();
 
             let key = Key::new(&key_string);
+            println!("p_key: {:?}, key_str: {:?}, key: {:?}", &param_key, &key_string, &key);
             // here i am getting the error as this will mutate the kademlia which is not acceptable by the closure
             // Also want to wait for result and push it into repsonse.
             // kademlia.get_record(&key, Quorum::One);
         }
 		Ok(Value::String("hello".into()))
 	});
-
+    println!("1");
 	let server = ServerBuilder::new(io)
 		.cors(DomainsValidation::AllowOnly(vec![AccessControlAllowOrigin::Null]))
 		.start_http(&"127.0.0.1:3030".parse().unwrap())
 		.expect("Unable to start RPC server");
-
+    println!("2");
+    println!("rpc server started");
 	server.wait();
+    println!("3");
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
     let mut args = line.split(" ");
-
+    println!("handle_input_line called with, line: {}", line);
     match args.next() {
         Some("GET") => {
             let key = {
