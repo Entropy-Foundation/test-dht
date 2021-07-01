@@ -162,8 +162,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     
     // Listen on all interfaces and whatever port the OS assigns.
-    &swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-    println!("swarm listening on /ip4/0.0.0.0/tcp/0");
+    &swarm.listen_on("/ip4/0.0.0.0/tcp/7865".parse()?)?;
+    println!("swarm listening on /ip4/0.0.0.0/tcp/7865");
     
     let mut stdin = io::BufReader::new(io::stdin()).lines();
     let swarm_thread = start_swarm(&mut stdin, &mut swarm);
