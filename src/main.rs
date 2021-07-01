@@ -134,17 +134,15 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
 }
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    println!("Welcome to rust coding with libp2p...Have fun!");
     env_logger::init();
 
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
 
-    println!("{}", local_peer_id);
-
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     let transport = development_transport(local_key).await?;
-    dbg!("transport: {?}", &transport);
     // We create a custom network behaviour that combines Kademlia and mDNS.
     
     // Create a swarm to manage peers and events.
@@ -152,14 +150,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Create a Kademlia behaviour.
         let store = MemoryStore::new(local_peer_id.clone());
         let kademlia = Kademlia::new(local_peer_id.clone(), store);
-        println!("inside swarm, got kademlia");
         // let bootaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?;
         // kademlia.add_address(&local_peer_id, bootaddr);
         // let bootaddr = Multiaddr::from_str("/ip4/0.0.0.0/tcp/0")?;
         // kademlia.add_address(&local_peer_id, bootaddr.clone());
         // let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
         let behaviour = MyBehaviour { kademlia};
-        println!("inside swarm, got behaviour");
         Swarm::new(transport, behaviour, local_peer_id)
     };
 
@@ -169,58 +165,47 @@ async fn main() -> Result<(), Box<dyn Error>> {
     &swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
     println!("swarm listening on /ip4/0.0.0.0/tcp/0");
     
-
-    let f1 = start_swarm(&mut swarm);
-
-    println!("rpc server starting");
-    let f2 = start_rpc_server();
-
-    futures::join!(f1, f2);
+    let mut stdin = io::BufReader::new(io::stdin()).lines();
+    let swarm_thread = start_swarm(&mut stdin, &mut swarm);
     
+    println!("rpc server starting");
+    start_rpc_server(swarm_thread).await;
+
     Ok(())    
 }
 
-async fn start_swarm(swarm: &mut libp2p::Swarm<MyBehaviour>){
-    // Read full lines from stdin
-    let mut stdin = io::BufReader::new(io::stdin()).lines();
+async fn start_swarm(stdin: &mut futures::io::Lines<async_std::io::BufReader<async_std::io::Stdin>>, swarm: &mut libp2p::Swarm<MyBehaviour>){
+
     // Kick it off.
-    let mut listening = false;
-    future::poll_fn(|cx: &mut Context<'_>| {
-        println!("swarm poll");
+    // let mut listening = false;
+    task::block_on(future::poll_fn(|cx: &mut Context<'_>| {
+        // println!("swarm poll");
         loop {
-            println!("swarm poll loop 1");
-            match stdin.try_poll_next_unpin(cx) {
-                Poll::Ready(Some(line)) => handle_input_line(&mut swarm.behaviour_mut().kademlia, line.unwrap()),
-                Poll::Ready(None) => panic!("Stdin closed"),
-                Poll::Pending => break
-            }
+            // println!("swarm poll loop 1");
+            
+                match stdin.try_poll_next_unpin(cx) {
+                    Poll::Ready(Some(line)) => handle_input_line(&mut swarm.behaviour_mut().kademlia, line.unwrap()),
+                    Poll::Ready(None) => panic!("Stdin closed"),
+                    Poll::Pending => break
+                }
+            
         }
         loop {
-            println!("swarm poll loop 2");
+            // println!("swarm poll loop 2");
             match swarm.poll_next_unpin(cx) {
                 Poll::Ready(Some(event)) => println!("{:?}", event),
                 Poll::Ready(None) => return Poll::Ready(()),
-                Poll::Pending => {
-                    if !listening {
-                        if let Some(a) = Swarm::listeners(&swarm).next() {
-                            println!("Listening on {:?}", a);
-                            println!("pending swarm...");
-                            listening = true;
-                        }
-                    }
-                    break
-                }
+                Poll::Pending => break,
             }
         }
         Poll::Pending
-    }).await;
+    }));
 }
 
-async fn start_rpc_server()
+async fn start_rpc_server(swarm_thread: impl futures::Future)
 {
-    println!("-1");
+    println!("inside start_rpc_server");
     let mut io = IoHandler::default();
-    println!("0");
 	io.add_method("say_hello", |params:Params| async {
         println!("someone is saying hello!!!");
         if let Params::Map(m) = params {
@@ -235,15 +220,14 @@ async fn start_rpc_server()
         }
 		Ok(Value::String("hello".into()))
 	});
-    println!("1");
 	let server = ServerBuilder::new(io)
 		.cors(DomainsValidation::AllowOnly(vec![AccessControlAllowOrigin::Null]))
 		.start_http(&"127.0.0.1:3030".parse().unwrap())
 		.expect("Unable to start RPC server");
-    println!("2");
-    println!("rpc server started");
-	server.wait();
-    println!("3");
+    println!("rpc server listening on http://127.0.0.1:3030");
+    futures::join!(swarm_thread);
+	//server.wait();
+    
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
