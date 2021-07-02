@@ -1,45 +1,3 @@
-// Copyright 20l9 Parity Technologies (UK) Ltd.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
-//! A basic key value store demonstrating libp2p and the mDNS and Kademlia protocols.
-//!
-//! 1. Using two terminal windows, start two instances. If you local network
-//!    allows mDNS, they will automatically connect.
-//!
-//! 2. Type `PUT my-key my-value` in terminal one and hit return.
-//!
-//! 3. Type `GET my-key` in terminal two and hit return.
-//!
-//! 4. Close with Ctrl-c.
-//!
-//! You can also store provider records instead of key value records.
-//!
-//! 1. Using two terminal windows, start two instances. If you local network
-//!    allows mDNS, they will automatically connect.
-//!
-//! 2. Type `PUT_PROVIDER my-key` in terminal one and hit return.
-//!
-//! 3. Type `GET_PROVIDERS my-key` in terminal two and hit return.
-//!
-//! 4. Close with Ctrl-c.
-
 use async_std::{io, task};
 use futures::prelude::*;
 use libp2p::kad::record::store::MemoryStore;
@@ -132,6 +90,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
         }
     }
 }
+
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Welcome to rust coding with libp2p...Have fun!");
@@ -150,17 +109,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Create a Kademlia behaviour.
         let store = MemoryStore::new(local_peer_id.clone());
         let kademlia = Kademlia::new(local_peer_id.clone(), store);
-        // let bootaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?;
-        // kademlia.add_address(&local_peer_id, bootaddr);
-        // let bootaddr = Multiaddr::from_str("/ip4/0.0.0.0/tcp/0")?;
-        // kademlia.add_address(&local_peer_id, bootaddr.clone());
-        // let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
         let behaviour = MyBehaviour { kademlia};
         Swarm::new(transport, behaviour, local_peer_id)
     };
-
-    
-    
     // Listen on all interfaces and whatever port the OS assigns.
     &swarm.listen_on("/ip4/0.0.0.0/tcp/7865".parse()?)?;
     println!("swarm listening on /ip4/0.0.0.0/tcp/7865");
@@ -175,23 +126,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn start_swarm(stdin: &mut futures::io::Lines<async_std::io::BufReader<async_std::io::Stdin>>, swarm: &mut libp2p::Swarm<MyBehaviour>){
-
     // Kick it off.
-    // let mut listening = false;
     task::block_on(future::poll_fn(|cx: &mut Context<'_>| {
-        // println!("swarm poll");
         loop {
-            // println!("swarm poll loop 1");
-            
-                match stdin.try_poll_next_unpin(cx) {
-                    Poll::Ready(Some(line)) => handle_input_line(&mut swarm.behaviour_mut().kademlia, line.unwrap()),
-                    Poll::Ready(None) => panic!("Stdin closed"),
-                    Poll::Pending => break
-                }
-            
+            match stdin.try_poll_next_unpin(cx) {
+                Poll::Ready(Some(line)) => handle_input_line(&mut swarm.behaviour_mut().kademlia, line.unwrap()),
+                Poll::Ready(None) => panic!("Stdin closed"),
+                Poll::Pending => break
+            }
         }
         loop {
-            // println!("swarm poll loop 2");
             match swarm.poll_next_unpin(cx) {
                 Poll::Ready(Some(event)) => println!("{:?}", event),
                 Poll::Ready(None) => return Poll::Ready(()),
@@ -214,9 +158,6 @@ async fn start_rpc_server(swarm_thread: impl futures::Future)
 
             let key = Key::new(&key_string);
             println!("p_key: {:?}, key_str: {:?}, key: {:?}", &param_key, &key_string, &key);
-            // here i am getting the error as this will mutate the kademlia which is not acceptable by the closure
-            // Also want to wait for result and push it into repsonse.
-            // kademlia.get_record(&key, Quorum::One);
         }
 		Ok(Value::String("hello".into()))
 	});
@@ -231,8 +172,8 @@ async fn start_rpc_server(swarm_thread: impl futures::Future)
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
+    // println!("handle_input_line called with, line: {}", line);
     let mut args = line.split(" ");
-    println!("handle_input_line called with, line: {}", line);
     match args.next() {
         Some("GET") => {
             let key = {
