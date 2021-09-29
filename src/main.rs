@@ -1,4 +1,5 @@
 use async_std::{io, task};
+use futures::io::Lines;
 use futures::prelude::*;
 use libp2p::kad::record::store::MemoryStore;
 use libp2p::kad::{
@@ -9,18 +10,26 @@ use libp2p::{
     development_transport, identity, swarm::NetworkBehaviourEventProcess, Multiaddr,
     NetworkBehaviour, PeerId, Swarm,
 };
-use std::str::FromStr;
 use std::{
     error::Error,
+    str::FromStr,
     task::{Context, Poll},
 };
 
 #[derive(NetworkBehaviour)]
-struct MyBehaviour {
+struct KademliaBehaviour {
     kademlia: Kademlia<MemoryStore>,
 }
 
-impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
+impl KademliaBehaviour {
+    pub fn new(peer_id: PeerId, store: MemoryStore) -> Self {
+        KademliaBehaviour {
+            kademlia: Kademlia::new(peer_id, store),
+        }
+    }
+}
+
+impl NetworkBehaviourEventProcess<KademliaEvent> for KademliaBehaviour {
     // Called when `kademlia` produces an event.
     fn inject_event(&mut self, message: KademliaEvent) {
         if let KademliaEvent::QueryResult { result, .. } = message {
@@ -79,42 +88,37 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("Welcome to rust coding with libp2p...Have fun!");
     env_logger::init();
 
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
-
     println!("Peer ID {:?}", local_peer_id.to_string());
+
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     let transport = development_transport(local_key).await?;
-    // We create a custom network behaviour that combines Kademlia and mDNS.
 
     // Create a swarm to manage peers and events.
     let mut swarm = {
-        // Create a Kademlia behaviour.
-        let store = MemoryStore::new(local_peer_id);
-        let kademlia = Kademlia::new(local_peer_id, store);
-        let behaviour = MyBehaviour { kademlia };
-        Swarm::new(transport, behaviour, local_peer_id)
+        Swarm::new(
+            transport,
+            KademliaBehaviour::new(local_peer_id, MemoryStore::new(local_peer_id)),
+            local_peer_id,
+        )
     };
     // Listen on all interfaces and whatever port the OS assigns.
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
-    let swarm_thread = start_swarm(&mut stdin, &mut swarm);
 
-    // println!("rpc server starting");
-    // start_rpc_server(swarm_thread).await;
-    futures::join!(swarm_thread);
+    futures::join!(start_swarm(&mut stdin, &mut swarm));
 
     Ok(())
 }
 
 async fn start_swarm(
-    stdin: &mut futures::io::Lines<async_std::io::BufReader<async_std::io::Stdin>>,
-    swarm: &mut libp2p::Swarm<MyBehaviour>,
+    stdin: &mut Lines<async_std::io::BufReader<async_std::io::Stdin>>,
+    swarm: &mut Swarm<KademliaBehaviour>,
 ) {
     // Kick it off.
     let mut listening = false;
@@ -148,8 +152,8 @@ async fn start_swarm(
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
-    // println!("handle_input_line called with, line: {}", line);
     let mut args = line.split(' ');
+
     match args.next() {
         Some("GET") => {
             let key = {
@@ -246,7 +250,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
             kademlia.add_address(&peer_id, multiaddr);
         }
         _ => {
-            eprintln!("expected GET, GET_PROVIDERS, PUT or PUT_PROVIDER");
+            eprintln!("expected ADD_NODE, GET, GET_PROVIDERS, PUT or PUT_PROVIDER");
         }
     }
 }
