@@ -115,8 +115,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut stdin = io::BufReader::new(io::stdin()).lines();
     let swarm_thread = start_swarm(&mut stdin, &mut swarm);
 
-    // println!("rpc server starting");
-    // start_rpc_server(swarm_thread).await;
+
     futures::join!(swarm_thread);
 
     Ok(())
