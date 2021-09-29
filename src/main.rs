@@ -25,7 +25,12 @@ use libp2p::{
 use std::str::FromStr;
 // use std::str::FromStr;
 use std::{error::Error, task::{Context, Poll}};
-
+use jsonrpc_http_server::*;
+use jsonrpc_http_server::jsonrpc_core::{
+    IoHandler,
+    Value,
+    types::params::Params
+};
 
 #[derive(NetworkBehaviour)]
 struct MyBehaviour {
@@ -150,6 +155,31 @@ async fn start_swarm(stdin: &mut futures::io::Lines<async_std::io::BufReader<asy
         }
         Poll::Pending
     }));
+}
+
+async fn start_rpc_server(swarm_thread: impl futures::Future)
+{
+    println!("inside start_rpc_server");
+    let mut io = IoHandler::default();
+    io.add_method("say_hello", |params:Params| async {
+        println!("someone is saying hello!!!");
+        if let Params::Map(m) = params {
+            let param_key = m.get("m").unwrap();
+            let key_string = param_key.as_str().unwrap();
+
+            let key = Key::new(&key_string);
+            println!("p_key: {:?}, key_str: {:?}, key: {:?}", &param_key, &key_string, &key);
+        }
+        Ok(Value::String("hello".into()))
+    });
+    let server = ServerBuilder::new(io)
+        .cors(DomainsValidation::AllowOnly(vec![AccessControlAllowOrigin::Null]))
+        .start_http(&"127.0.0.1:3030".parse().unwrap())
+        .expect("Unable to start RPC server");
+    println!("rpc server listening on http://127.0.0.1:3030");
+    // futures::join!(swarm_thread);
+    // server.wait();
+
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
