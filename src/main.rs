@@ -36,7 +36,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         fn inject_event(&mut self, event: MdnsEvent) {
             if let MdnsEvent::Discovered(list) = event {
                 for (peer_id, multiaddr) in list {
-                    println!("new node found");
                     self.kademlia.add_address(&peer_id, multiaddr);
                 }
             }
@@ -67,7 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         } in ok.records
                         {
                             println!(
-                                "Got record {:?} {:?}",
+                                "Value for {:?} is:- {:?}",
                                 std::str::from_utf8(key.as_ref()).unwrap(),
                                 std::str::from_utf8(&value).unwrap(),
                             );
@@ -77,10 +76,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         eprintln!("Failed to get record: {:?}", err);
                     }
                     QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
-                        println!(
-                            "Successfully put record {:?}",
-                            std::str::from_utf8(key.as_ref()).unwrap()
-                        );
+                        println!("Data successfully saved for {:?}", std::str::from_utf8(key.as_ref()).unwrap());
                     }
                     QueryResult::PutRecord(Err(err)) => {
                         eprintln!("Failed to put record: {:?}", err);
