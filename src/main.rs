@@ -132,8 +132,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         SwarmEvent::NewListenAddr {address, ..} => {
                             println!("Listening on with peer {} {}", local_peer_id, address);
                         },
-                        SwarmEvent::ConnectionEstablished {peer_id, .. } => {
-                            println!("new address peerid {}", peer_id);
+                        SwarmEvent::ConnectionEstablished {peer_id, endpoint,  .. } => {
+                            println!("new address peerid {} on {:?}", peer_id, endpoint);
+
                         },
                         _ => {}
                     }
