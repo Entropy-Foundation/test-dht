@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         },
                         SwarmEvent::ConnectionEstablished {peer_id, endpoint,  .. } => {
                             println!("new address peerid {} on {:?}", peer_id, endpoint);
-
+                            swarm.dial(&peer_id).unwrap();
                         },
                         _ => {}
                     }
