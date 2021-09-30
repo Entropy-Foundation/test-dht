@@ -36,6 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         fn inject_event(&mut self, event: MdnsEvent) {
             if let MdnsEvent::Discovered(list) = event {
                 for (peer_id, multiaddr) in list {
+                    println!("new node found");
                     self.kademlia.add_address(&peer_id, multiaddr);
                 }
             }
