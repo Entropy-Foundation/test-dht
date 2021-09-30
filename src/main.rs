@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Called when `mdns` produces an event.
         fn inject_event(&mut self, event: MdnsEvent) {
             if let MdnsEvent::Discovered(list) = event {
+                println!("new node found");
                 for (peer_id, multiaddr) in list {
                     self.kademlia.add_address(&peer_id, multiaddr);
                 }
@@ -129,6 +130,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Poll::Ready(Some(event)) => {
                     if let SwarmEvent::NewListenAddr { address, .. } = event {
                         println!("Listening on with peer {} {}", local_peer_id, address);
+                    }
+                    if let SwarmEvent::IncomingConnection {local_addr, .. } = event {
+                        println!("local address {}", local_addr);
                     }
                 }
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
