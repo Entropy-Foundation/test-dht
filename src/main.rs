@@ -128,11 +128,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         loop {
             match swarm.poll_next_unpin(cx) {
                 Poll::Ready(Some(event)) => {
-                    if let SwarmEvent::NewListenAddr { address, .. } = event {
-                        println!("Listening on with peer {} {}", local_peer_id, address);
-                    }
-                    if let SwarmEvent::IncomingConnection {local_addr, .. } = event {
-                        println!("local address {}", local_addr);
+                    match event {
+                        SwarmEvent::NewListenAddr {address, ..} => {
+                            println!("Listening on with peer {} {}", local_peer_id, address);
+                        },
+                        SwarmEvent::IncomingConnection {local_addr, .. } => {
+                            println!("local address {}", local_addr);
+                        },
+                        _ => {}
                     }
                 }
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
