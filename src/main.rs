@@ -5,12 +5,13 @@ use libp2p::kad::{
     record::Key, AddProviderOk, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult,
     Quorum, Record,
 };
-use libp2p::{development_transport, identity, mdns::{Mdns, MdnsConfig, MdnsEvent}, swarm::{NetworkBehaviourEventProcess, SwarmEvent}, NetworkBehaviour, PeerId, Swarm, Multiaddr};
+use libp2p::{development_transport, identity, swarm::{NetworkBehaviourEventProcess, SwarmEvent}, NetworkBehaviour, PeerId, Swarm, Multiaddr};
 use std::{
     error::Error,
     task::{Context, Poll},
 };
 use std::str::FromStr;
+use std::borrow::Borrow;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -28,19 +29,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[behaviour(event_process = true)]
     struct MyBehaviour {
         kademlia: Kademlia<MemoryStore>,
-        mdns: Mdns,
-    }
-
-    impl NetworkBehaviourEventProcess<MdnsEvent> for MyBehaviour {
-        // Called when `mdns` produces an event.
-        fn inject_event(&mut self, event: MdnsEvent) {
-            if let MdnsEvent::Discovered(list) = event {
-                println!("new node found");
-                for (peer_id, multiaddr) in list {
-                    self.kademlia.add_address(&peer_id, multiaddr);
-                }
-            }
-        }
     }
 
     impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
@@ -103,8 +91,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Create a Kademlia behaviour.
         let store = MemoryStore::new(local_peer_id);
         let kademlia = Kademlia::new(local_peer_id, store);
-        let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
-        let behaviour = MyBehaviour { kademlia, mdns };
+       // let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
+        let behaviour = MyBehaviour { kademlia };
         Swarm::new(transport, behaviour, local_peer_id)
     };
 
@@ -130,15 +118,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Poll::Ready(Some(event)) => {
                     match event {
                         SwarmEvent::NewListenAddr {address, ..} => {
-                            println!("Listening on with peer {} {}", local_peer_id, address);
+                            println!("Listening on with peer {} {} ", local_peer_id, address);
                         },
-                        SwarmEvent::ConnectionEstablished {peer_id, endpoint,  .. } => {
-                            println!("new address peerid {} on {:?}", peer_id, endpoint);
-                            swarm.dial(&peer_id);
+                        SwarmEvent::ConnectionEstablished {peer_id, endpoint, ..} => {
+                            println!("Sender Address {} {}", peer_id, endpoint.get_remote_address());
                         },
-                        SwarmEvent:: IncomingConnection {local_addr, .. } => {
-                            println!("Incoming Connection {} on {:?}",local_addr, local_peer_id);
+                        SwarmEvent::IncomingConnection {send_back_addr, ..} => {
+                            println!("Incoming Connection: {} ", send_back_addr.);
                         }
+
                         _ => {}
                     }
                 }
