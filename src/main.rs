@@ -2,8 +2,7 @@ use async_std::{io, task};
 use futures::prelude::*;
 use libp2p::kad::record::store::MemoryStore;
 use libp2p::kad::{
-    record::Key, AddProviderOk, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult,
-    Quorum, Record,
+    record::Key, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult, Quorum, Record,
 };
 use libp2p::{
     development_transport, identity,
@@ -33,8 +32,8 @@ impl KademliaBehaviour {
 impl NetworkBehaviourEventProcess<KademliaEvent> for KademliaBehaviour {
     // Called when `kademlia` produces an event.
     fn inject_event(&mut self, message: KademliaEvent) {
-        match message {
-            KademliaEvent::OutboundQueryCompleted { result, .. } => match result {
+        if let KademliaEvent::OutboundQueryCompleted { result, .. } = message {
+            match result {
                 QueryResult::GetRecord(Ok(ok)) => {
                     for PeerRecord {
                         record: Record { key, value, .. },
@@ -61,8 +60,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for KademliaBehaviour {
                     eprintln!("Failed to put record: {:?}", err);
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 }
@@ -94,11 +92,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
     // Kick it off.
-    task::block_on(future::poll_fn(|cx: &mut Context<'_>| {
+    task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
         loop {
-            match stdin.try_poll_next_unpin(cx) {
+            match stdin.try_poll_next_unpin(cx)? {
                 Poll::Ready(Some(line)) => {
-                    handle_input_line(&mut swarm.behaviour_mut().kademlia, line.unwrap())
+                    handle_input_line(&mut swarm.behaviour_mut().kademlia, line)
                 }
                 Poll::Ready(None) => panic!("Stdin closed"),
                 Poll::Pending => break,
@@ -116,9 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Poll::Pending
-    }));
-
-    Ok(())
+    }))
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
