@@ -1,5 +1,4 @@
 use async_std::{io, task};
-use futures::io::Lines;
 use futures::prelude::*;
 use libp2p::kad::record::store::MemoryStore;
 use libp2p::kad::{
@@ -7,8 +6,9 @@ use libp2p::kad::{
     Quorum, Record,
 };
 use libp2p::{
-    development_transport, identity, swarm::NetworkBehaviourEventProcess, Multiaddr,
-    NetworkBehaviour, PeerId, Swarm,
+    development_transport, identity,
+    swarm::{NetworkBehaviourEventProcess, SwarmEvent},
+    Multiaddr, NetworkBehaviour, PeerId, Swarm,
 };
 use std::{
     error::Error,
@@ -17,6 +17,7 @@ use std::{
 };
 
 #[derive(NetworkBehaviour)]
+#[behaviour(event_process = true)]
 struct KademliaBehaviour {
     kademlia: Kademlia<MemoryStore>,
 }
@@ -32,20 +33,8 @@ impl KademliaBehaviour {
 impl NetworkBehaviourEventProcess<KademliaEvent> for KademliaBehaviour {
     // Called when `kademlia` produces an event.
     fn inject_event(&mut self, message: KademliaEvent) {
-        if let KademliaEvent::QueryResult { result, .. } = message {
-            match result {
-                QueryResult::GetProviders(Ok(ok)) => {
-                    for peer in ok.providers {
-                        println!(
-                            "Peer {:?} provides key {:?}",
-                            peer,
-                            std::str::from_utf8(ok.key.as_ref()).unwrap()
-                        );
-                    }
-                }
-                QueryResult::GetProviders(Err(err)) => {
-                    eprintln!("Failed to get providers: {:?}", err);
-                }
+        match message {
+            KademliaEvent::OutboundQueryCompleted { result, .. } => match result {
                 QueryResult::GetRecord(Ok(ok)) => {
                     for PeerRecord {
                         record: Record { key, value, .. },
@@ -71,17 +60,9 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for KademliaBehaviour {
                 QueryResult::PutRecord(Err(err)) => {
                     eprintln!("Failed to put record: {:?}", err);
                 }
-                QueryResult::StartProviding(Ok(AddProviderOk { key })) => {
-                    println!(
-                        "Successfully put provider record {:?}",
-                        std::str::from_utf8(key.as_ref()).unwrap()
-                    );
-                }
-                QueryResult::StartProviding(Err(err)) => {
-                    eprintln!("Failed to put provider record: {:?}", err);
-                }
                 _ => {}
-            }
+            },
+            _ => {}
         }
     }
 }
@@ -106,22 +87,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             local_peer_id,
         )
     };
-    // Listen on all interfaces and whatever port the OS assigns.
-    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
-    futures::join!(start_swarm(&mut stdin, &mut swarm));
+    // Listen on all interfaces and whatever port the OS assigns.
+    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    Ok(())
-}
-
-async fn start_swarm(
-    stdin: &mut Lines<async_std::io::BufReader<async_std::io::Stdin>>,
-    swarm: &mut Swarm<KademliaBehaviour>,
-) {
     // Kick it off.
-    let mut listening = false;
     task::block_on(future::poll_fn(|cx: &mut Context<'_>| {
         loop {
             match stdin.try_poll_next_unpin(cx) {
@@ -134,21 +106,19 @@ async fn start_swarm(
         }
         loop {
             match swarm.poll_next_unpin(cx) {
-                Poll::Ready(Some(event)) => println!("{:?}", event),
-                Poll::Ready(None) => return Poll::Ready(()),
-                Poll::Pending => {
-                    if !listening {
-                        if let Some(a) = Swarm::listeners(swarm).next() {
-                            println!("Listening on {:?}", a);
-                            listening = true;
-                        }
+                Poll::Ready(Some(event)) => {
+                    if let SwarmEvent::NewListenAddr { address, .. } = event {
+                        println!("Listening on {:?}", address);
                     }
-                    break;
                 }
+                Poll::Ready(None) => return Poll::Ready(Ok(())),
+                Poll::Pending => break,
             }
         }
         Poll::Pending
     }));
+
+    Ok(())
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
@@ -166,18 +136,6 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
                 }
             };
             kademlia.get_record(&key, Quorum::One);
-        }
-        Some("GET_PROVIDERS") => {
-            let key = {
-                match args.next() {
-                    Some(key) => Key::new(&key),
-                    None => {
-                        eprintln!("Expected key");
-                        return;
-                    }
-                }
-            };
-            kademlia.get_providers(key);
         }
         Some("PUT") => {
             let key = {
@@ -208,21 +166,6 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
                 .put_record(record, Quorum::One)
                 .expect("Failed to store record locally.");
         }
-        Some("PUT_PROVIDER") => {
-            let key = {
-                match args.next() {
-                    Some(key) => Key::new(&key),
-                    None => {
-                        eprintln!("Expected key");
-                        return;
-                    }
-                }
-            };
-
-            kademlia
-                .start_providing(key)
-                .expect("Failed to start providing key");
-        }
         Some("ADD_NODE") => {
             let key = {
                 match args.next() {
@@ -238,7 +181,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
                 match args.next() {
                     Some(key) => key,
                     None => {
-                        eprintln!("Expected multiaddress");
+                        eprintln!("Expected multi-address");
                         return;
                     }
                 }
@@ -246,11 +189,11 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
             println!("{}", &key);
             println!("{}", &address);
             let peer_id = PeerId::from_str(key).unwrap();
-            let multiaddr = Multiaddr::from_str(address).unwrap();
-            kademlia.add_address(&peer_id, multiaddr);
+            let multi_addr = Multiaddr::from_str(address).unwrap();
+            kademlia.add_address(&peer_id, multi_addr);
         }
         _ => {
-            eprintln!("expected ADD_NODE, GET, GET_PROVIDERS, PUT or PUT_PROVIDER");
+            eprintln!("Expected ADD_NODE, GET or PUT");
         }
     }
 }
