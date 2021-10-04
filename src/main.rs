@@ -146,12 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         SwarmEvent::NewListenAddr {address, ..} => {
                             println!("Listening on with peer {} {} ", local_peer_id, address);
                         },
-                        SwarmEvent::ConnectionEstablished {peer_id, endpoint, ..} => {
-                            println!("Sender Address {} {}", peer_id, endpoint.get_remote_address());
-                        },
-                        SwarmEvent::IncomingConnection {send_back_addr, ..} => {
-                            println!("Incoming Connection: {}", send_back_addr);
-                        }
+                        
                         _ => {}
                     }
                 }
