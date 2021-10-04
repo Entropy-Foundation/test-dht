@@ -144,9 +144,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Poll::Ready(Some(event)) => {
                     match event {
                         SwarmEvent::NewListenAddr {address, ..} => {
-                            println!("Listening on with peer {} {} ", local_peer_id, address);
+                            if !(address.to_string().contains("127.0.0.1")) {
+                                println!("Listening on with peer {} {} ", local_peer_id, address);
+                            }
                         },
-                        
+
                         _ => {}
                     }
                 }
