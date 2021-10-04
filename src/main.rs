@@ -1,10 +1,7 @@
 use async_std::{io, task};
 use futures::prelude::*;
 use libp2p::kad::record::store::MemoryStore;
-use libp2p::kad::{
-    record::Key, AddProviderOk, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult,
-    Quorum, Record,
-};
+use libp2p::kad::{record::Key, AddProviderOk, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult, Quorum, Record, KademliaConfig};
 use libp2p::{development_transport, identity, swarm::{NetworkBehaviourEventProcess, SwarmEvent}, NetworkBehaviour, PeerId, Swarm, Multiaddr};
 use std::{
     error::Error,
@@ -13,6 +10,8 @@ use std::{
 use std::str::FromStr;
 use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent};
 use async_std::channel::{unbounded, Sender};
+use libp2p::swarm::NetworkBehaviour;
+use std::time::Duration;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -35,12 +34,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     impl NetworkBehaviourEventProcess<IdentifyEvent> for MyBehaviour {
         fn inject_event(&mut self, event: IdentifyEvent) {
+
             match event {
                 IdentifyEvent::Received {peer_id,info} => {
-                    // println!("peer_id: {:?}, info: {:?}", &peer_id, &info.listen_addrs);
+                    println!("Connected peer_id: {:?}", &peer_id);
                     for addr in &info.listen_addrs {
                         self.kademlia.add_address(&peer_id, addr.clone());
                     }
+
                 }
                 _ => {}
             }
@@ -96,6 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     QueryResult::StartProviding(Err(err)) => {
                         eprintln!("Failed to put provider record: {:?}", err);
                     }
+
                     _ => {}
                 },
                 _ => {}
@@ -107,7 +109,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut swarm = {
         // Create a Kademlia behaviour.
         let store = MemoryStore::new(local_peer_id);
-        let kademlia = Kademlia::new(local_peer_id, store);
+        let mut kad_config = KademliaConfig::default();
+        kad_config.set_connection_idle_timeout(Duration::from_secs(1000));
+        let kademlia = Kademlia::with_config(local_peer_id, store, kad_config);
 
         let identify_config = IdentifyConfig::new("dht/1.0.0".to_string(),local_key.public().clone());
         let identify = Identify::new(identify_config);
@@ -125,7 +129,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let str = "identity";
     let key = Key::new(&str);
 
-    swarm.behaviour_mut().kademlia.start_providing(key);
+
+    swarm.behaviour_mut().kademlia.start_providing(key).unwrap();
     let (tx, mut rx) = unbounded::<String>();
 
     // Kick it off.
@@ -148,7 +153,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 println!("Listening on with peer {} {} ", local_peer_id, address);
                             }
                         },
-
+                        SwarmEvent::ConnectionClosed {peer_id, ..} => {
+                            for address in swarm.behaviour_mut().kademlia.addresses_of_peer(&peer_id) {
+                                swarm.behaviour_mut().kademlia.remove_address(&peer_id, &address);
+                            }
+                            println!("Removed:{:?}", &peer_id);
+                        },
                         _ => {}
                     }
                 }
