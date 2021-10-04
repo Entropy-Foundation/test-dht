@@ -1,7 +1,7 @@
 use async_std::{io, task};
 use futures::prelude::*;
 use libp2p::kad::record::store::MemoryStore;
-use libp2p::kad::{record::Key, AddProviderOk, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult, Quorum, Record, KademliaConfig};
+use libp2p::kad::{record::Key, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult, Quorum, Record, KademliaConfig};
 use libp2p::{development_transport, identity, swarm::{NetworkBehaviourEventProcess, SwarmEvent}, NetworkBehaviour, PeerId, Swarm, Multiaddr};
 use std::{
     error::Error,
@@ -54,18 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         fn inject_event(&mut self, message: KademliaEvent) {
             match message {
                 KademliaEvent::OutboundQueryCompleted { result, .. } => match result {
-                    QueryResult::GetProviders(Ok(ok)) => {
-                        for peer in ok.providers {
-                            println!(
-                                "Peer {:?} provides key {:?}",
-                                peer,
-                                std::str::from_utf8(ok.key.as_ref()).unwrap()
-                            );
-                        }
-                    }
-                    QueryResult::GetProviders(Err(err)) => {
-                        eprintln!("Failed to get providers: {:?}", err);
-                    }
+
                     QueryResult::GetRecord(Ok(ok)) => {
                         for PeerRecord {
                             record: Record { key, value, .. },
@@ -88,15 +77,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     QueryResult::PutRecord(Err(err)) => {
                         eprintln!("Failed to put record: {:?}", err);
                     }
-                    QueryResult::StartProviding(Ok(AddProviderOk { key })) => {
-                        println!(
-                            "Successfully put provider record {:?}",
-                            std::str::from_utf8(key.as_ref()).unwrap()
-                        );
-                    }
-                    QueryResult::StartProviding(Err(err)) => {
-                        eprintln!("Failed to put provider record: {:?}", err);
-                    }
 
                     _ => {}
                 },
@@ -110,7 +90,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Create a Kademlia behaviour.
         let store = MemoryStore::new(local_peer_id);
         let mut kad_config = KademliaConfig::default();
-        kad_config.set_connection_idle_timeout(Duration::from_secs(1000));
+        kad_config.set_connection_idle_timeout(Duration::from_secs(100000));
         let kademlia = Kademlia::with_config(local_peer_id, store, kad_config);
 
         let identify_config = IdentifyConfig::new("dht/1.0.0".to_string(),local_key.public().clone());
@@ -197,18 +177,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String, tx: Sen
             };
             kademlia.get_record(&key, Quorum::One);
         }
-        Some("GET_PROVIDERS") => {
-            let key = {
-                match args.next() {
-                    Some(key) => Key::new(&key),
-                    None => {
-                        eprintln!("Expected key");
-                        return;
-                    }
-                }
-            };
-            kademlia.get_providers(key);
-        }
+
         Some("PUT") => {
             let key = {
                 match args.next() {
@@ -238,21 +207,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String, tx: Sen
                 .put_record(record, Quorum::One)
                 .expect("Failed to store record locally.");
         }
-        Some("PUT_PROVIDER") => {
-            let key = {
-                match args.next() {
-                    Some(key) => Key::new(&key),
-                    None => {
-                        eprintln!("Expected key");
-                        return;
-                    }
-                }
-            };
 
-            kademlia
-                .start_providing(key)
-                .expect("Failed to start providing key");
-        }
         Some("ADD_NODE") => {
             let key = {
                 match args.next() {
@@ -284,7 +239,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String, tx: Sen
             tx.try_send(address.to_string()).unwrap();
         }
         _ => {
-            eprintln!("expected GET, GET_PROVIDERS, PUT or PUT_PROVIDER");
+            eprintln!("expected GET, PUT or ADD_NODE");
         }
     }
 }
