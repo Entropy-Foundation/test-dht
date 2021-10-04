@@ -5,6 +5,7 @@ use libp2p::kad::{
     record::Key, AddProviderOk, Kademlia, KademliaEvent, PeerRecord, PutRecordOk, QueryResult,
     Quorum, Record,
 };
+use libp2p::swarm::PollParameters;
 use libp2p::{development_transport, identity, swarm::{NetworkBehaviourEventProcess, SwarmEvent}, NetworkBehaviour, PeerId, Swarm, Multiaddr};
 use std::{
     error::Error,
@@ -54,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             match message {
                 KademliaEvent::OutboundQueryCompleted { result, .. } => match result {
                     QueryResult::GetProviders(Ok(ok)) => {
-                        for peer in ok.providers {
+                        for peer in ok.closest_peers {
                             println!(
                                 "Peer {:?} provides key {:?}",
                                 peer,
@@ -125,7 +126,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let str = "identity";
     let key = Key::new(&str);
 
-    swarm.behaviour_mut().kademlia.start_providing(key);
+    swarm.behaviour_mut().kademlia.start_providing(key).unwrap();
     let (tx, mut rx) = unbounded::<String>();
 
     // Kick it off.
@@ -133,7 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         loop {
             match stdin.try_poll_next_unpin(cx)? {
                 Poll::Ready(Some(line)) => {
-                    handle_input_line(&mut swarm.behaviour_mut().kademlia, line, tx.clone())
+                    handle_input_line(&mut swarm.behaviour_mut().kademlia, line, tx.clone(), local_peer_id.clone())
                 }
                 Poll::Ready(None) => panic!("Stdin closed"),
                 Poll::Pending => break,
@@ -171,7 +172,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }))
 }
 
-fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String, tx: Sender<String>) {
+fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String, tx: Sender<String>, local_peer_id: PeerId) {
     let mut args = line.split(' ');
 
     match args.next() {
@@ -221,7 +222,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String, tx: Sen
             let record = Record {
                 key,
                 value,
-                publisher: None,
+                publisher: Some(local_peer_id),
                 expires: None,
             };
             kademlia
