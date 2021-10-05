@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     impl NetworkBehaviourEventProcess<IdentifyEvent> for MyBehaviour {
         fn inject_event(&mut self, event: IdentifyEvent) {
             if let IdentifyEvent::Received { peer_id, info } = event {
-                println!("Connected peer_id: {:?}", &peer_id);
+                println!("Connected: {:?}", &peer_id);
                 for addr in &info.listen_addrs {
                     self.kademlia.add_address(&peer_id, addr.clone());
                 }
@@ -224,10 +224,7 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
         Some("ADD_NODE") => {
             let key = {
                 match args.next() {
-                    Some(key) => {
-                        eprintln!("Connected");
-                        key
-                    }
+                    Some(key) => key,
                     None => {
                         eprintln!("Expected peer id");
                         return;
@@ -244,8 +241,7 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
                     }
                 }
             };
-            println!("{}", &key);
-            println!("{}", &address);
+
             let peer_id = PeerId::from_str(key).unwrap();
             let multiaddr = Multiaddr::from_str(address).unwrap();
             behaviour.kademlia.add_address(&peer_id, multiaddr);
