@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     swarm
         .behaviour_mut()
         .kademlia
-        .start_providing(Key::new("identity"))
+        .start_providing(Key::new(&"identity"))
         .unwrap();
     let (tx, mut rx) = unbounded::<String>();
 
