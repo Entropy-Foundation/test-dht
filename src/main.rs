@@ -115,10 +115,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Listen on all interfaces and whatever port the OS assigns.
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    let str = "identity";
-    let key = Key::new(&str);
-
-    swarm.behaviour_mut().kademlia.start_providing(key).unwrap();
+    swarm
+        .behaviour_mut()
+        .kademlia
+        .start_providing(Key::new("identity"))
+        .unwrap();
     let (tx, mut rx) = unbounded::<String>();
 
     // Kick it off.
