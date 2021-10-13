@@ -1197,6 +1197,7 @@ dependencies = [
  "jsonrpc-http-server",
  "libp2p",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
