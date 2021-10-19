@@ -22,6 +22,8 @@ use std::{
 use std::fs;
 use serde_json;
 use serde::{Serialize, Deserialize};
+use chrono::prelude::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 
 #[derive(NetworkBehaviour)]
@@ -73,6 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 std::str::from_utf8(key.as_ref()).unwrap(),
                                 std::str::from_utf8(&value).unwrap(),
                             );
+                            println!("End Get: {:?}", Utc::now().timestamp_millis());
                         }
                     }
                     QueryResult::GetRecord(Err(err)) => {
@@ -83,6 +86,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             "Data successfully saved for {:?}",
                             std::str::from_utf8(key.as_ref()).unwrap()
                         );
+                        println!("End Put: {:?}", Utc::now().timestamp_millis());
                     }
                     QueryResult::PutRecord(Err(err)) => {
                         eprintln!("Failed to put record: {:?}", err);
@@ -209,10 +213,13 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
                     }
                 }
             };
+
             behaviour.kademlia.get_record(&key, Quorum::One);
         }
 
         Some("PUT") => {
+            println!("Start Put: {:?}", Utc::now().timestamp_millis());
+
             let key = {
                 match args.next() {
                     Some(key) => Key::new(&key),
@@ -308,6 +315,8 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
 
         Some("ADD_JSON") => {
 
+            println!("Start Put: {:?}", Utc::now().timestamp_millis());
+
             let file = fs::File::open("transaction_batch_1M.json")
                 .expect("file should open read only");
 
@@ -315,11 +324,7 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
                 .expect("file should be proper JSON");
 
             let value_json : Vec<Transaction> = serde_json::from_str(json["params"]["message"].to_string().as_str()).unwrap();
-
-            
-            
             let arr:Vec<_> = value_json.chunks(40).collect();
-
 
             for (i, j) in arr.into_iter().enumerate() {
 
@@ -344,6 +349,8 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
         }
 
         Some("GET_JSON_DATA_FROM_DHT") => {
+
+            println!("Start Get: {:?}", Utc::now().timestamp_millis());
             let file = fs::File::open("transaction_batch_1M.json")
                 .expect("file should open read only");
 
@@ -352,7 +359,9 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
 
             let value_json : Vec<Transaction> = serde_json::from_str(json["params"]["message"].to_string().as_str()).unwrap();
 
-            for (i, j) in value_json.iter().enumerate() {
+            let arr:Vec<_> = value_json.chunks(40).collect();
+
+            for (i, j) in arr.iter().enumerate() {
                 let key_name: String = format!("data_{}",i);
 
                 let key = Key::new(&key_name);
@@ -365,3 +374,4 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
         }
     }
 }
+
