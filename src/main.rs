@@ -23,6 +23,7 @@ use std::fs;
 use serde_json;
 use serde::{Serialize, Deserialize};
 
+
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
 struct MyBehaviour {
@@ -98,7 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let m_config = MemoryStoreConfig {
             max_provided_keys: 1024,
             max_providers_per_key: 20,
-            max_records: 102400,
+            max_records: 1024,
             max_value_bytes: 650*1024*1024,
         };
         // Create a Kademlia behaviour.
@@ -269,6 +270,42 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
             tx.try_send(address.to_string()).unwrap();
         }
 
+        Some("ADD_ALL_JSON") => {
+
+            let file = fs::File::open("transaction_batch_1M.json")
+                .expect("file should open read only");
+
+            let json: serde_json::Value = serde_json::from_reader(file)
+                .expect("file should be proper JSON");
+
+            // let value_json : Vec<Transaction> = serde_json::from_str(json["params"]["message"].to_string().as_str()).unwrap();
+            let value_json = json["params"]["message"].to_string().as_bytes().to_vec();
+            
+
+            let key = {
+                match args.next() {
+                    Some(key) => Key::new(&key),
+                    None => {
+                        eprintln!("Expected key");
+                        return;
+                    }
+                }
+            };
+
+                let record = Record {
+                    key,
+                    value:value_json,
+                    publisher: Some(behaviour.local_peer_id),
+                    expires: None,
+                };
+                behaviour
+                    .kademlia
+                    .put_record(record, Quorum::One)
+                    .expect("Failed to store record locally.");
+
+            
+        }
+
         Some("ADD_JSON") => {
 
             let file = fs::File::open("transaction_batch_1M.json")
@@ -279,7 +316,12 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
 
             let value_json : Vec<Transaction> = serde_json::from_str(json["params"]["message"].to_string().as_str()).unwrap();
 
-            for (i, j) in value_json.iter().enumerate() {
+            
+            
+            let arr:Vec<_> = value_json.chunks(40).collect();
+
+
+            for (i, j) in arr.into_iter().enumerate() {
 
                 let key_name: String = format!("data_{}",i);
 
@@ -319,7 +361,7 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
         }
 
         _ => {
-            eprintln!("expected GET, PUT or ADD_NODE");
+            eprintln!("expected GET, PUT, ADD_NODE, ADD_JSON, or GET_JSON_DATA_FROM_DHT");
         }
     }
 }
