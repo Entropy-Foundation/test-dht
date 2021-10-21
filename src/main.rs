@@ -23,7 +23,6 @@ use std::fs;
 use serde_json;
 use serde::{Serialize, Deserialize};
 use chrono::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 
 #[derive(NetworkBehaviour)]
@@ -102,18 +101,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut swarm = {
         let m_config = MemoryStoreConfig {
             max_provided_keys: 1024,
-            max_providers_per_key: 20,
-            max_records: 1024,
+            max_providers_per_key: 1024 * 1024,
+            max_records: 1024 * 1024,
             max_value_bytes: 650*1024*1024,
         };
+
         // Create a Kademlia behaviour.
         let store = MemoryStore::with_config(local_peer_id, m_config);
 
 
         let mut kad_config = KademliaConfig::default();
         kad_config.set_connection_idle_timeout(Duration::from_secs(100000));
+        kad_config.set_max_packet_size(5000 * 1024);
+        
         let kademlia = Kademlia::with_config(local_peer_id, store, kad_config);
-
+        
         let identify_config = IdentifyConfig::new("dht/1.0.0".to_string(), local_key.public());
         let identify = Identify::new(identify_config);
         let behaviour = MyBehaviour {
@@ -192,11 +194,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Transaction {
-    transaction_id:String,
-    from_account:String,
-    to_account:String,
-    amount:usize,
-    signature:String,
+    transaction_id: String,
+    from_account: String,
+    to_account: String,
+    amount: usize,
+    signature: String,
 }
 
 fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehaviour) {
@@ -277,7 +279,7 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
             tx.try_send(address.to_string()).unwrap();
         }
 
-        Some("ADD_ALL_JSON") => {
+        Some("ADD_BATCH") => {
 
             let file = fs::File::open("transaction_batch_1M.json")
                 .expect("file should open read only");
@@ -309,68 +311,10 @@ fn handle_input_line(line: String, tx: Sender<String>, behaviour: &mut MyBehavio
                     .kademlia
                     .put_record(record, Quorum::One)
                     .expect("Failed to store record locally.");
-
-            
-        }
-
-        Some("ADD_JSON") => {
-
-            println!("Start Put: {:?}", Utc::now().timestamp_millis());
-
-            let file = fs::File::open("transaction_batch_1M.json")
-                .expect("file should open read only");
-
-            let json: serde_json::Value = serde_json::from_reader(file)
-                .expect("file should be proper JSON");
-
-            let value_json : Vec<Transaction> = serde_json::from_str(json["params"]["message"].to_string().as_str()).unwrap();
-            let arr:Vec<_> = value_json.chunks(40).collect();
-
-            for (i, j) in arr.into_iter().enumerate() {
-
-                let key_name: String = format!("data_{}",i);
-
-                let key = Key::new(&key_name);
-
-                let value_store = serde_json::to_vec(&j).unwrap();
-
-                let record = Record {
-                    key,
-                    value:value_store,
-                    publisher: Some(behaviour.local_peer_id),
-                    expires: None,
-                };
-                behaviour
-                    .kademlia
-                    .put_record(record, Quorum::One)
-                    .expect("Failed to store record locally.");
-
-            }
-        }
-
-        Some("GET_JSON_DATA_FROM_DHT") => {
-
-            println!("Start Get: {:?}", Utc::now().timestamp_millis());
-            let file = fs::File::open("transaction_batch_1M.json")
-                .expect("file should open read only");
-
-            let json: serde_json::Value = serde_json::from_reader(file)
-                .expect("file should be proper JSON");
-
-            let value_json : Vec<Transaction> = serde_json::from_str(json["params"]["message"].to_string().as_str()).unwrap();
-
-            let arr:Vec<_> = value_json.chunks(40).collect();
-
-            for (i, j) in arr.iter().enumerate() {
-                let key_name: String = format!("data_{}",i);
-
-                let key = Key::new(&key_name);
-                behaviour.kademlia.get_record(&key, Quorum::One);
-            }
         }
 
         _ => {
-            eprintln!("expected GET, PUT, ADD_NODE, ADD_JSON, or GET_JSON_DATA_FROM_DHT");
+            eprintln!("expected GET, PUT, ADD_NODE, ADD_BATCH");
         }
     }
 }
